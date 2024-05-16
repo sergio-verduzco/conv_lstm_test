@@ -1,0 +1,19 @@
+---
+# 256x256 data
+#data_path: /mnt/bucket/TaniU/Members/prasanna/prasanna_data/datasets/groupA1_traindataset_256x256.h5
+data_path: /media/z/Data/datasets/language_network/groupA1_traindataset_256x256.h5
+#data_path: ./groupA1_traindataset_256x256.h5
+#model_path: saved_params.pkl
+model_path: /media/z/Data/datasets/language_network/saved_params.pkl
+
+batch_size: 35
+n_epochs: 2
+learning_rate: 5.0e-4
+h_channels: 12  # number of channels in the hidden state
+inp_kernel_size: 3 # kernel size for input convolutions
+hid_kernel_size: 3 # kernel size for hidden state convolutions
+trans_kernel_size: 5  # kernel size for transpose convolutions
+s: 2        # stride for direct convolutions
+p: 0        # padding for direct convolutions
+d: 1        # input dilation for direct convolutions
+kd: 1       # kernel dilation for the direct convolutions

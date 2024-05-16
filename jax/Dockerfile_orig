@@ -1,0 +1,24 @@
+# Use a PyTorch base with CUDA 12.4 support
+FROM pytorch/manylinux-cuda124
+# Install JAX
+RUN python3 - m pip install -U --pre jax -f https://storage.googleapis.com/jax-releases/jax_nightly_releases.html
+# RUN python3 -m pip install -U --pre jaxlib -f https://storage.googleapis.com/jax-releases/jaxlib_nightly_releases.html
+RUN python3 -m pip install jax-cuda12-pjrt jax-cuda12-plugin -f https://storage.googleapis.com/jax-releases/jax_cuda_plugin_nightly_releases.html
+# RUN python3 -m pip install "jax[cuda12]"
+# RUN python3 -m pip install jaxlib
+# Install the rest of the dependencies
+WORKDIR /app
+COPY requirements.txt .
+COPY jax_conv_lstm.py .
+COPY rnn_config.yaml .
+COPY hello_world.py .
+RUN pwd
+RUN ls
+RUN python3 -m pip install -r requirements.txt
+
+# Remember to bind mount the data folder to /app with write permissions
+# For example
+# docker run --mount type=bind,source=/media/z/Data/datasets/language_network,target=/app jax_lstm:0.1
+
+CMD ["python3", "jax_conv_lstm.py", "rnn_config.yaml"]
+# CMD python3 hello_world.py

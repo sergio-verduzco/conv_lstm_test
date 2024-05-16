@@ -1,0 +1,9 @@
+h5py==3.1.0
+pycparser==2.21
+Pygments==2.14.0
+pyparsing==3.1.2
+PyYAML==6.0.1
+pyzmq==25.1.2
+requests==2.27.1
+scipy==1.5.4
+typing_extensions==4.1.1
