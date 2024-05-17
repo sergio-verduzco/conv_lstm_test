@@ -57,7 +57,7 @@ class TorchDataLoader(data.DataLoader):
                                               drop_last=True)
 
 
-def padding(input_dim, output_dim, stride, kernel_size, dilation):
+def padding_fun(input_dim, output_dim, stride, kernel_size, dilation):
     """Calculate the padding for a convolution.
 
     The padding is calculated to attain the desired input and output
@@ -164,11 +164,8 @@ class ConvLSTMCell(nn.Module):
         h_cur, c_cur = cur_state
     
         inp_convs = self.inp_conv(input_tensor)
-        print(f"inp_convs: {inp_convs.shape}")
         hid_convs = self.hid_conv(h_cur)
-        print(f"hid_convs: {hid_convs.shape}")
         ic, fc, oc, gc = torch.split(inp_convs + hid_convs, self.hidden_channels, dim=1)
-        print(f"ic: {ic.shape}")
         i = F.sigmoid(ic + self.i_bias)
         f = F.sigmoid(fc + self.f_bias)
         o = F.sigmoid(oc + self.o_bias)
@@ -178,14 +175,34 @@ class ConvLSTMCell(nn.Module):
 
         return h_next, c_next
 
+    def hid_shape(self, inp_size):
+        """ Calculate the shape of the hidden state for a given input size.
+
+        :param inp_size: height and width of the input images
+        :type inp_size: tuple(int)
+        :return: height and width of the hidden state
+        :rtype: tuple(int)
+        """
+        height, width = inp_size
+        height = (height + 2 * self.inp_padding - self.ik_dilation * (self.inp_kernel_size - 1) - 1) // self.inp_stride + 1
+        width = (width + 2 * self.inp_padding - self.ik_dilation * (self.inp_kernel_size - 1) - 1) // self.inp_stride + 1
+        return height, width
+
     def init_hidden(self, batch_size, image_size):
-        height, width = image_size
+        """ Initialize the hidden state to zeros.
+
+        :param batch_size: number of inputs in the batch
+        :type batch_size: int
+        :param image_size: height and width of the input images
+        :type image_size: tuple(int)
+        """
+        height, width = self.hid_shape(image_size)
         return (torch.zeros(batch_size, self.hidden_channels, height, width),
                 torch.zeros(batch_size, self.hidden_channels, height, width))
 
     def init_hidden_from_normal(self, batch_size, image_size, std=0.1):
         """ Initialize the hidden state from a normal distribution. """
-        height, width = image_size
+        height, width = self.hid_shape(image_size)
         return (std * torch.randn(batch_size, self.hidden_channels, height, width),
                 std * torch.randn(batch_size, self.hidden_channels, height, width))
 
@@ -199,37 +216,117 @@ class PredictorCell(nn.Module):
     def __init__(self, conv_params, conv_params_t):
         """ Initialize the PredictorCell.
 
-        :param conv_params: parameters for the ConvLSTM cell. Dictionary with:
-            - input_size: number of channels in the input tensor
-            - hidden_size: number of channels in the hidden state
-            - kernel_size: size of the convolutional kernel
-            - stride: stride of the convolutional layer
-            - dilation: kernel dilation
-            - padding: padding of the convolutional layer
+        :param conv_params: parameters for ConvLSTMCell. Dictionary with:
+            - input_channels: number of channels in the input tensor
+            - hidden_channels: number of channels in the hidden state
+            - inp_kernel_size: kernel size for input convolutions
+            - hid_kernel_size: kernel size for hidden state convolutions
+            - inp_stride: stride for the input convolutions
+            - inp_padding: padding for the input convolutions
+            - ik_dilation: kernel dilation for the input convolutions
             - bias: whether to use bias in the convolutional layers
         :type conv_params: dict
         :param conv_params_t: parameter dictionary for the transpose convolution.
-            - input_size: number of channels in the input tensor
-            - output_size: number of channels in the output tensor
             - kernel_size: size of the convolutional kernel
-            - stride: stride of the "direct" convolution
-            - padding: padding of the "direct" convolution
+            - ik_dilation: kernel dilation for the transpose convolutions
+            - inp_padding: input padding for the transpose convolutions
+            - output_padding: additional size for the output shape
+            - bias: whether to use bias in the convolutional layer
+        :type conv_params_t: dict
         """
         super(PredictorCell, self).__init__()
-        self.padding = kernel_size[0] // 2, kernel_size[1] // 2
-        self.conv_lstm = ConvLSTMCell(conv_params['input_size'],
-                                      conv_params['hidden_size'],
-                                      conv_params['kernel_size'],
-                                      stride=conv_params['stride'],
-                                      padding=conv_params['padding'],
-                                      dilation=conv_params['dilation'],
+        self.conv_lstm = ConvLSTMCell(conv_params['input_channels'],
+                                      conv_params['hidden_channels'],
+                                      conv_params['inp_kernel_size'],
+                                      conv_params['hid_kernel_size'],
+                                      inp_stride=conv_params['inp_stride'],
+                                      inp_padding=conv_params['inp_padding'],
+                                      ik_dilation=conv_params['ik_dilation'],
                                       bias=conv_params['bias'],
         )
-        self.transp_conv = nn.ConvTranspose2d(in_channels=hidden_size,
-                                              out_channels=input_size,
-                                              kernel_size=kernel_size,
-                                              padding=self.padding,
-                                              bias=bias)
+        self.transp_conv = nn.ConvTranspose2d(conv_params['hidden_channels'],
+                                              conv_params['input_channels'],
+                                              conv_params_t['kernel_size'],
+                                              stride=conv_params['inp_stride'],
+                                              padding=conv_params_t['inp_padding'],
+                                              output_padding=conv_params_t['output_padding'],
+                                              bias=conv_params_t['bias'],
+        )
+        
+    def forward(self, input_tensor, cur_state):
+        """ Advance one time step.
+
+        :param input_tensor: input tensor for the current time step
+        :type input_tensor: torch.Tensor
+        :param cur_state: current hidden and cell states
+        :type cur_state: tuple(torch.Tensor, torch.Tensor)
+        :return: next input, next hidden and cell states
+        :rtype: tuple(torch.Tensor, torch.Tensor, torch.Tensor)
+        """
+        h_cur, c_cur = cur_state
+        h_next, c_next = self.conv_lstm(input_tensor, (h_cur, c_cur))
+        next_input = self.transp_conv(h_next)
+        return next_input, h_next, c_next
+
+    def init_hidden(self, batch_size, image_size):
+        return self.conv_lstm.init_hidden(batch_size, image_size)
+
+    def init_hidden_from_normal(self, batch_size, image_size, std=0.1):
+        return self.conv_lstm.init_hidden_from_normal(batch_size, image_size, std=std)
+
+
+class Predictor(nn.Module):
+    """ Autoregressive prediction for sequences of images with ConvLSTM. """
+    def __init__(self, conv_params, conv_params_t):
+        """ Initialize the Predictor.
+
+        :param conv_params: Same as for the PredictorCell class.
+        :type conv_params: dict
+        :param conv_params_t: Same as for the PredictorCell class.
+        :type conv_params_t: dict
+        """
+        super(Predictor, self).__init__()
+        self.predictor_cell = PredictorCell(conv_params, conv_params_t)
+
+    def forward(self, first_imgs, T, normal_init=True):
+        """ Predict a sequence of T images.
+
+        :param first_imgs: Tensor with shape (batches, 3, height, width)
+        :type first_imgs: torch.Tensor
+        :param T: number of images to predict
+        :type T: int
+        :normal_init: Initialize the ConvLSTM hidden state from a normal?
+        :type normal_init: bool
+        :return: Tensor with shape (batches, T, 3, height, width)
+        :rtype: torch.Tensor
+        """
+        shape = first_imgs.shape
+        im_size = (shape[2], shape[3])
+        if normal_init:
+            h, c = self.predictor_cell.init_hidden_from_normal(shape[0], im_size)
+        else:
+            h, c = self.predictor_cell.init_hidden(shape[0], im_size)
+        h = h.to(first_imgs.device)
+        c = c.to(first_imgs.device)
+        
+        with torch.no_grad():
+            pred_sequence = [first_imgs.clone()]
+
+        for img_n in range(1, T):
+            img, h, c = self.predictor_cell(pred_sequence[-1], (h, c))
+            pred_sequence.append(img)
+
+        return torch.stack(pred_sequence, dim=1)
+
+
+
+
+
+
+
+
+
+
 
 
 
