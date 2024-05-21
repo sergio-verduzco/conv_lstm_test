@@ -454,7 +454,6 @@ def sgd_update(params, vision, h, c, conv_params, conv_params_t, lr=1e-3):
         :rtype: tuple(jnp.array, dict, dict)
     """
     loss_val, grads = jax.value_and_grad(loss)(params, vision, h, c, conv_params, conv_params_t)
-    #new_params = jax.tree.map(
     new_params = tree_map(
         lambda p, g: p - lr * g, params, grads
     )

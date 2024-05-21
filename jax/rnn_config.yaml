@@ -6,8 +6,8 @@ data_path: /media/z/Data/datasets/language_network/groupA1_traindataset_256x256.
 #model_path: saved_params.pkl
 model_path: /media/z/Data/datasets/language_network/saved_params.pkl
 
-batch_size: 35
-n_epochs: 2
+batch_size: 32 
+n_epochs: 3 
 learning_rate: 5.0e-4
 h_channels: 12  # number of channels in the hidden state
 inp_kernel_size: 3 # kernel size for input convolutions

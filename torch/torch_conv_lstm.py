@@ -200,7 +200,7 @@ class ConvLSTMCell(nn.Module):
         return (torch.zeros(batch_size, self.hidden_channels, height, width),
                 torch.zeros(batch_size, self.hidden_channels, height, width))
 
-    def init_hidden_from_normal(self, batch_size, image_size, std=0.1):
+    def init_hidden_from_normal(self, batch_size, image_size, std=0.05):
         """ Initialize the hidden state from a normal distribution. """
         height, width = self.hid_shape(image_size)
         return (std * torch.randn(batch_size, self.hidden_channels, height, width),
@@ -288,6 +288,7 @@ class Predictor(nn.Module):
         super(Predictor, self).__init__()
         self.predictor_cell = PredictorCell(conv_params, conv_params_t)
 
+    @torch.compile(backend="cudagraphs")
     def forward(self, first_imgs, T, normal_init=True):
         """ Predict a sequence of T images.
 
@@ -317,16 +318,6 @@ class Predictor(nn.Module):
             pred_sequence.append(img)
 
         return torch.stack(pred_sequence, dim=1)
-
-
-
-
-
-
-
-
-
-
 
 
 
